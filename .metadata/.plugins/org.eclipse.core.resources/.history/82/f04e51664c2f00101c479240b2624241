@@ -1,0 +1,194 @@
+package simulator.view;
+
+import javax.swing.*; // Importa las clases necesarias de Swing para la creación de la interfaz gráfica.
+import java.awt.*; // Importa las clases necesarias para el diseño y la manipulación de gráficos.
+import java.io.File; // Importa la clase para trabajar con archivos.
+import java.io.IOException; // Importa la clase para manejar excepciones de entrada/salida.
+import java.util.Collection; // Importa la colección de eventos que se manejarán en el mapa.
+import javax.imageio.ImageIO; // Importa la clase para leer imágenes desde archivos.
+import simulator.control.Controller; // Importa el controlador de la simulación.
+import simulator.model.*; // Importa las clases del modelo de la simulación, como RoadMap, Road, Vehicle, etc.
+
+public class MapByRoadComponent extends JPanel implements TrafficSimObserver {
+    private static final long serialVersionUID = 1L; // Serialización para la persistencia.
+
+    // Colores y configuraciones para la visualización.
+    private static final Color _BG_COLOR = Color.WHITE; // Color de fondo del mapa.
+    private static final Color _ROAD_COLOR = Color.BLACK; // Color de las carreteras.
+    private static final Color _JUNCTION_COLOR = Color.BLUE; // Color de los cruces.
+    private static final Color _JUNCTION_LABEL_COLOR = new Color(200, 100, 0); // Color de las etiquetas de los cruces.
+    private static final Color _GREEN_LIGHT_COLOR = Color.GREEN; // Color para los semáforos verdes.
+    private static final Color _RED_LIGHT_COLOR = Color.RED; // Color para los semáforos rojos.
+    private static final int _JRADIUS = 10; // Radio de los cruces (círculos).
+    private static final int _VEHICLE_SIZE = 16; // Tamaño de los vehículos representados en el mapa.
+
+    private RoadMap _map; // Mapa de carreteras de la simulación.
+    private Image _car, _weather_cloud, _weather_rain, _weather_storm, _weather_sun, _weather_wind; // Imágenes para vehículos y condiciones climáticas.
+    private Image[] _contIcons; // Íconos de contaminación.
+
+    // Constructor que inicializa el componente del mapa y se registra como observador.
+    public MapByRoadComponent(Controller ctrl) {
+        initGUI(); // Inicializa la interfaz gráfica del componente.
+        ctrl.addObserver(this); // Se registra como observador del controlador para recibir actualizaciones.
+    }
+
+    // Método para inicializar la interfaz gráfica y cargar las imágenes.
+    private void initGUI() {
+        // Carga las imágenes desde los recursos.
+        _car = loadImage("car_front.png");
+        _weather_cloud = loadImage("cloud.png");
+        _weather_rain = loadImage("rain.png");
+        _weather_storm = loadImage("storm.png");
+        _weather_sun = loadImage("sun.png");
+        _weather_wind = loadImage("wind.png");
+        
+        // Inicializa los iconos de contaminación.
+        _contIcons = new Image[6]; // Limita a 6 niveles de contaminación.
+        for (int i = 0; i <= 5; i++) {
+            _contIcons[i] = loadImage("cont_" + i + ".png"); // Carga las imágenes de contaminación.
+        }
+        
+        // Establece el tamaño preferido del componente.
+        setPreferredSize(new Dimension(300, 200));
+    }
+
+    // Método que pinta el componente, dibujando el mapa y otros elementos.
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        Graphics2D g2 = (Graphics2D) g;
+        
+        // Habilita el suavizado de gráficos.
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+        g2.setColor(_BG_COLOR); // Establece el color de fondo.
+        g2.clearRect(0, 0, getWidth(), getHeight()); // Limpia el área de dibujo.
+
+        // Si no hay carreteras, muestra un mensaje.
+        if (_map == null || _map.getRoads().isEmpty()) {
+            g2.setColor(Color.RED);
+            g2.drawString("No roads yet!", getWidth() / 2 - 50, getHeight() / 2); // Mensaje si no hay carreteras.
+        } else {
+            drawMap(g2); // Dibuja el mapa si hay carreteras.
+        }
+    }
+
+    // Método que dibuja el mapa de las carreteras y otros elementos como vehículos y cruces.
+    private void drawMap(Graphics2D g) {
+        int y = 50;
+        int x1 = 50;
+        int x2 = getWidth() - 80; // Reducir espacio para los iconos.
+
+        // Itera sobre todas las carreteras del mapa.
+        for (Road r : _map.getRoads()) {
+            // Dibuja el ID de la carretera.
+            g.setColor(Color.BLACK);
+            g.drawString(r.getId(), x1 - 30, y + 5);
+
+            // Dibuja la línea de la carretera.
+            g.setColor(_ROAD_COLOR);
+            g.drawLine(x1, y, x2, y);
+
+            // Dibuja el cruce de origen (src).
+            g.setColor(_JUNCTION_COLOR);
+            g.fillOval(x1 - _JRADIUS / 2, y - _JRADIUS / 2, _JRADIUS, _JRADIUS); // Círculo para el cruce.
+            g.setColor(_JUNCTION_LABEL_COLOR);
+            g.drawString(r.getSrc().getId(), x1 - 5, y - 10); // Etiqueta para el cruce de origen.
+
+            // Dibuja el cruce de destino (dest) con semáforo.
+            Color destColor = _RED_LIGHT_COLOR; // El color predeterminado es rojo.
+            int idx = r.getDest().getGreenLightIndex();
+            if (idx != -1 && r.equals(r.getDest().getInRoads().get(idx))) {
+                destColor = _GREEN_LIGHT_COLOR; // Si el semáforo es verde, cambia el color.
+            }
+            g.setColor(destColor);
+            g.fillOval(x2 - _JRADIUS / 2, y - _JRADIUS / 2, _JRADIUS, _JRADIUS);
+            g.setColor(_JUNCTION_LABEL_COLOR);
+            g.drawString(r.getDest().getId(), x2 - 5, y - 10); // Etiqueta para el cruce de destino.
+
+            // Dibuja los vehículos en la carretera.
+            for (Vehicle v : r.getVehicles()) {
+                if (v.getStatus() != VehicleStatus.ARRIVED) {
+                    int x = x1 + (int) ((x2 - x1) * ((double) v.getLocation() / r.getLength()));
+                    if (_car != null) {
+                        g.drawImage(_car, x - _VEHICLE_SIZE / 2, y - _VEHICLE_SIZE / 2, _VEHICLE_SIZE, _VEHICLE_SIZE, this); // Dibuja el vehículo.
+                    } else {
+                        g.setColor(Color.RED);
+                        g.fillOval(x - _VEHICLE_SIZE / 2, y - _VEHICLE_SIZE / 2, _VEHICLE_SIZE, _VEHICLE_SIZE); // Si no se carga la imagen, dibuja un círculo rojo.
+                    }
+                    // Dibuja la etiqueta del vehículo con un color según su nivel de contaminación.
+                    int vLabelColor = (int)(25.0 * (10.0 - (double)v.getContClass()));
+                    g.setColor(new Color(0, vLabelColor, 0));
+                    g.drawString(v.getId(), x + _VEHICLE_SIZE / 2 + 5, y - _VEHICLE_SIZE / 2 - 5);
+                }
+            }
+
+            // Dibuja el icono del clima en la carretera.
+            Image weatherIcon = getWeatherIcon(r.getWeather());
+            if (weatherIcon != null) {
+                g.drawImage(weatherIcon, x2 + 10, y - 10, 20, 20, this); // Icono del clima.
+            }
+
+            // Dibuja el icono de contaminación.
+            int contClass = (int) Math.floor(Math.min((double) r.getTotalCO2() / (1.0 + (double) r.getContLimit()), 1.0) / 0.19);
+            contClass = Math.min(contClass, 5); // Limita el nivel de contaminación entre 0 y 5.
+            if (_contIcons[contClass] != null) {
+                g.drawImage(_contIcons[contClass], x2 + 40, y - 10, 20, 20, this); // Icono de contaminación.
+            }
+
+            y += 40; // Incrementa la posición vertical para la siguiente carretera.
+        }
+    }
+
+    // Método que obtiene el ícono del clima según el tipo de clima.
+    private Image getWeatherIcon(Weather w) {
+        switch (w) {
+            case SUNNY: return _weather_sun;
+            case CLOUDY: return _weather_cloud;
+            case RAINY: return _weather_rain;
+            case WINDY: return _weather_wind;
+            case STORM: return _weather_storm;
+            default: return _weather_sun; // Valor por defecto.
+        }
+    }
+
+    // Método para cargar una imagen desde el archivo de recursos.
+    private Image loadImage(String img) {
+        try {
+            return ImageIO.read(new File("resources/icons/" + img)); // Lee la imagen desde el archivo.
+        } catch (IOException e) {
+            return null; // Si hay un error, retorna null.
+        }
+    }
+
+    // Método para actualizar el mapa y redibujar la vista.
+    private void update(RoadMap map) {
+        _map = map;
+        setPreferredSize(new Dimension(getWidth(), Math.max(200, 40 * _map.getRoads().size() + 20))); // Actualiza el tamaño del componente.
+        revalidate(); // Vuelve a validar el diseño del componente.
+        repaint(); // Vuelve a dibujar el componente.
+    }
+
+    // Métodos de la interfaz `TrafficSimObserver` que se llaman cuando se actualiza la simulación.
+    @Override
+    public void onAdvance(RoadMap map, Collection<simulator.model.Event> events, int time) {
+        update(map);
+    }
+
+    @Override
+    public void onEventAdded(RoadMap map, Collection<simulator.model.Event> events, simulator.model.Event e, int time) {
+        update(map);
+    }
+
+    @Override
+    public void onReset(RoadMap map, Collection<simulator.model.Event> events, int time) {
+        update(map);
+    }
+
+    @Override
+    public void onRegister(RoadMap map, Collection<simulator.model.Event> events, int time) {
+        update(map);
+    }
+}
+
