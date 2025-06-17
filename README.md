@@ -2,9 +2,7 @@
 
 Este proyecto implementa una interfaz gráfica de usuario (GUI) para un simulador de tráfico, desarrollada siguiendo el patrón de diseño Modelo-Vista-Controlador (MVC). Forma parte de la **Práctica 2 de la asignatura TP2**.
 
-## 📅 Fecha de entrega
 
-22 de abril de 2025, 08:30 AM
 
 ---
 
